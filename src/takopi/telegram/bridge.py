@@ -31,8 +31,9 @@ from ..transport import (
 )
 from ..utils.paths import reset_run_base_dir, set_run_base_dir
 from ..worktrees import WorktreeError, resolve_run_cwd
-from .client import BotClient, poll_incoming
+from .client import BotClient, CallbackQuery, poll_incoming_with_callbacks
 from .render import prepare_telegram
+from .sessions import handle_callback_query, show_sessions_menu
 
 logger = get_logger(__name__)
 
@@ -50,6 +51,14 @@ def _is_cancel_command(text: str) -> bool:
         return False
     command = stripped.split(maxsplit=1)[0]
     return command == "/cancel" or command.startswith("/cancel@")
+
+
+def _is_sessions_command(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    command = stripped.split(maxsplit=1)[0]
+    return command == "/sessions" or command.startswith("/sessions@")
 
 
 def _strip_engine_command(
@@ -288,12 +297,16 @@ def _resolve_message(
 
 
 def _build_bot_commands(
-    router: AutoRouter, projects: ProjectsConfig
+    router: AutoRouter,
+    projects: ProjectsConfig,
+    configured_engines: set[str],
 ) -> list[dict[str, str]]:
     commands: list[dict[str, str]] = []
     seen: set[str] = set()
     for entry in router.available_entries:
         cmd = entry.engine.lower()
+        if cmd not in configured_engines:
+            continue
         if cmd in seen:
             continue
         commands.append({"command": cmd, "description": f"start {cmd}"})
@@ -310,6 +323,9 @@ def _build_bot_commands(
             continue
         commands.append({"command": cmd, "description": f"project {cmd}"})
         seen.add(cmd)
+    if "pi" in configured_engines and "sessions" not in seen:
+        commands.append({"command": "sessions", "description": "📜 view pi sessions"})
+        seen.add("sessions")
     if "cancel" not in seen:
         commands.append({"command": "cancel", "description": "cancel run"})
     if len(commands) > _MAX_BOT_COMMANDS:
@@ -325,7 +341,7 @@ def _build_bot_commands(
 
 
 async def _set_command_menu(cfg: TelegramBridgeConfig) -> None:
-    commands = _build_bot_commands(cfg.router, cfg.projects)
+    commands = _build_bot_commands(cfg.router, cfg.projects, cfg.configured_engines)
     if not commands:
         return
     try:
@@ -473,6 +489,7 @@ class TelegramBridgeConfig:
     startup_msg: str
     exec_cfg: ExecBridgeConfig
     projects: ProjectsConfig = field(default_factory=empty_projects_config)
+    configured_engines: set[str] = field(default_factory=set)
 
 
 async def _send_plain(
@@ -524,13 +541,15 @@ async def _drain_backlog(cfg: TelegramBridgeConfig, offset: int | None) -> int |
 
 async def poll_updates(
     cfg: TelegramBridgeConfig,
-) -> AsyncIterator[TransportIncomingMessage]:
+) -> AsyncIterator[TransportIncomingMessage | CallbackQuery]:
     offset: int | None = None
     offset = await _drain_backlog(cfg, offset)
     await _send_startup(cfg)
 
-    async for msg in poll_incoming(cfg.bot, chat_id=cfg.chat_id, offset=offset):
-        yield msg
+    async for item in poll_incoming_with_callbacks(
+        cfg.bot, chat_id=cfg.chat_id, offset=offset
+    ):
+        yield item
 
 
 async def _handle_cancel(
@@ -648,10 +667,33 @@ async def _send_runner_unavailable(
     )
 
 
+async def _handle_callback(
+    cfg: TelegramBridgeConfig,
+    callback: CallbackQuery,
+) -> None:
+    """Handle inline keyboard callback query."""
+    try:
+        await handle_callback_query(
+            cfg.bot,
+            callback.chat_id,
+            callback.data,
+            cfg.projects,
+            None,
+        )
+    except Exception as exc:
+        logger.error(
+            "callback.failed",
+            error=str(exc),
+            error_type=exc.__class__.__name__,
+        )
+    finally:
+        await cfg.bot.answer_callback_query(callback.callback_query_id)
+
+
 async def run_main_loop(
     cfg: TelegramBridgeConfig,
     poller: Callable[
-        [TelegramBridgeConfig], AsyncIterator[TransportIncomingMessage]
+        [TelegramBridgeConfig], AsyncIterator[TransportIncomingMessage | CallbackQuery]
     ] = poll_updates,
 ) -> None:
     running_tasks: RunningTasks = {}
@@ -764,7 +806,16 @@ async def run_main_loop(
 
             scheduler = ThreadScheduler(task_group=tg, run_job=run_thread_job)
 
-            async for msg in poller(cfg):
+            async for item in poller(cfg):
+                if isinstance(item, CallbackQuery):
+                    tg.start_soon(
+                        _handle_callback,
+                        cfg,
+                        item,
+                    )
+                    continue
+
+                msg = item
                 text = msg.text
                 user_msg_id = msg.message_id
                 chat_id = msg.chat_id
@@ -777,6 +828,28 @@ async def run_main_loop(
 
                 if _is_cancel_command(text):
                     tg.start_soon(_handle_cancel, cfg, msg, running_tasks)
+                    continue
+
+                if _is_sessions_command(text):
+                    # Parse project directive from message (e.g., "/tui /sessions")
+                    reply_text = msg.reply_to_text
+                    try:
+                        resolved = _resolve_message(
+                            text=text,
+                            reply_text=reply_text,
+                            router=cfg.router,
+                            projects=cfg.projects,
+                        )
+                        sessions_context = resolved.context
+                    except DirectiveError:
+                        sessions_context = None
+                    tg.start_soon(
+                        show_sessions_menu,
+                        cfg.bot,
+                        chat_id,
+                        sessions_context,
+                        cfg.projects,
+                    )
                     continue
 
                 reply_text = msg.reply_to_text
@@ -817,6 +890,18 @@ async def run_main_loop(
                         continue
 
                 if resume_token is None:
+                    # If prompt is empty but we have context, just confirm context switch
+                    if not text.strip() and context is not None:
+                        ctx_line = _format_context_line(context, projects=cfg.projects)
+                        confirm_text = f"✅ Switched to project\n\n{ctx_line or ''}"
+                        await _send_plain(
+                            cfg.exec_cfg.transport,
+                            chat_id=chat_id,
+                            user_msg_id=user_msg_id,
+                            text=confirm_text,
+                            notify=False,
+                        )
+                        continue
                     tg.start_soon(
                         run_job,
                         chat_id,
