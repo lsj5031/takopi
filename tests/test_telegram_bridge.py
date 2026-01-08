@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import anyio
 import pytest
@@ -108,12 +109,12 @@ class _FakeBot:
         text: str,
         reply_to_message_id: int | None = None,
         disable_notification: bool | None = False,
-        entities: list[dict] | None = None,
+        entities: list[dict[str, Any]] | None = None,
         parse_mode: str | None = None,
         *,
         replace_message_id: int | None = None,
-        reply_markup: dict | None = None,
-    ) -> dict:
+        reply_markup: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         self.send_calls.append(
             {
                 "chat_id": chat_id,
@@ -133,11 +134,12 @@ class _FakeBot:
         chat_id: int,
         message_id: int,
         text: str,
-        entities: list[dict] | None = None,
+        entities: list[dict[str, Any]] | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
         *,
         wait: bool = True,
-    ) -> dict:
+    ) -> dict[str, Any] | None:
         self.edit_calls.append(
             {
                 "chat_id": chat_id,
@@ -145,6 +147,7 @@ class _FakeBot:
                 "text": text,
                 "entities": entities,
                 "parse_mode": parse_mode,
+                "reply_markup": reply_markup,
                 "wait": wait,
             }
         )
@@ -156,9 +159,9 @@ class _FakeBot:
 
     async def set_my_commands(
         self,
-        commands: list[dict],
+        commands: list[dict[str, Any]],
         *,
-        scope: dict | None = None,
+        scope: dict[str, Any] | None = None,
         language_code: str | None = None,
     ) -> bool:
         self.command_calls.append(
@@ -177,9 +180,9 @@ class _FakeBot:
         self,
         *,
         chat_id: int,
-        document,
+        document: Path,
         caption: str | None = None,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         return {"message_id": 1}
 
     async def answer_callback_query(
@@ -341,7 +344,7 @@ async def test_telegram_transport_passes_replace_and_wait() -> None:
 async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
     class _OutboxBot:
         def __init__(self) -> None:
-            self.edit_calls: list[dict[str, object]] = []
+            self.edit_calls: list[dict[str, Any]] = []
 
         async def get_updates(
             self,
@@ -357,12 +360,12 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
             text: str,
             reply_to_message_id: int | None = None,
             disable_notification: bool | None = False,
-            entities: list[dict] | None = None,
+            entities: list[dict[str, Any]] | None = None,
             parse_mode: str | None = None,
             *,
             replace_message_id: int | None = None,
-            reply_markup: dict | None = None,
-        ) -> dict | None:
+            reply_markup: dict[str, Any] | None = None,
+        ) -> dict[str, Any] | None:
             return None
 
         async def edit_message_text(
@@ -370,11 +373,12 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
             chat_id: int,
             message_id: int,
             text: str,
-            entities: list[dict] | None = None,
+            entities: list[dict[str, Any]] | None = None,
             parse_mode: str | None = None,
+            reply_markup: dict[str, Any] | None = None,
             *,
             wait: bool = True,
-        ) -> dict | None:
+        ) -> dict[str, Any] | None:
             self.edit_calls.append(
                 {
                     "chat_id": chat_id,
@@ -398,9 +402,9 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
 
         async def set_my_commands(
             self,
-            commands: list[dict[str, object]],
+            commands: list[dict[str, Any]],
             *,
-            scope: dict[str, object] | None = None,
+            scope: dict[str, Any] | None = None,
             language_code: str | None = None,
         ) -> bool:
             return False
@@ -412,9 +416,9 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
             self,
             *,
             chat_id: int,
-            document,
+            document: Path,
             caption: str | None = None,
-        ) -> dict | None:
+        ) -> dict[str, Any] | None:
             return None
 
         async def answer_callback_query(

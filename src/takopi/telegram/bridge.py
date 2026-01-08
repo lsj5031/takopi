@@ -848,11 +848,15 @@ async def run_main_loop(
 
                     # Priority: explicit directive > active project > show_sessions_menu default
                     if explicit_project:
-                        sessions_context = RunContext(project=explicit_project, branch=None)
+                        sessions_context = RunContext(
+                            project=explicit_project, branch=None
+                        )
                     else:
                         active_project = active_projects.get(chat_id)
                         if active_project:
-                            sessions_context = RunContext(project=active_project, branch=None)
+                            sessions_context = RunContext(
+                                project=active_project, branch=None
+                            )
                         else:
                             sessions_context = None
 
@@ -881,8 +885,6 @@ async def run_main_loop(
                         text=f"error:\n{exc}",
                     )
                     continue
-
-
 
                 if resolved.context and resolved.context.project:
                     active_projects[chat_id] = resolved.context.project

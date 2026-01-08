@@ -124,13 +124,9 @@ def extract_first_message(session_file: Path) -> str | None:
                                 first_item = content[0]
                                 if isinstance(first_item, dict):
                                     text = first_item.get("text", "")
-                            
+
                             if text:
-                                return (
-                                    text[:100] + "..."
-                                    if len(text) > 100
-                                    else text
-                                )
+                                return text[:100] + "..." if len(text) > 100 else text
 
                 except (json.JSONDecodeError, KeyError, TypeError):
                     continue
@@ -229,7 +225,7 @@ def export_session_to_html(
         )
     except subprocess.CalledProcessError as e:
         raise FileNotFoundError(
-            "pi not found. Install with: npm install -g @anthropics/claude-code"
+            "pi not found. Install with: npm install -g @mariozechner/pi-coding-agent"
         ) from e
 
     export_dir.mkdir(parents=True, exist_ok=True)

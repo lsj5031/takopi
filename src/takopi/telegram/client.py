@@ -127,7 +127,9 @@ def parse_callback_query(
         callback_query_id=callback_id,
         chat_id=msg_chat_id,
         data=data,
-        message_id=message.get("message_id") if isinstance(message.get("message_id"), int) else None,
+        message_id=message.get("message_id")
+        if isinstance(message.get("message_id"), int)
+        else None,
     )
 
 

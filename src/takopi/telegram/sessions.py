@@ -131,9 +131,13 @@ async def show_sessions_menu(
     # Navigation buttons
     nav_buttons = []
     if page > 0:
-        nav_buttons.append({"text": "⬅️ Prev", "callback_data": f"page:{project_alias}:{page - 1}"})
+        nav_buttons.append(
+            {"text": "⬅️ Prev", "callback_data": f"page:{project_alias}:{page - 1}"}
+        )
     if page < total_pages - 1:
-        nav_buttons.append({"text": "Next ➡️", "callback_data": f"page:{project_alias}:{page + 1}"})
+        nav_buttons.append(
+            {"text": "Next ➡️", "callback_data": f"page:{project_alias}:{page + 1}"}
+        )
     if nav_buttons:
         keyboard.append(nav_buttons)
 
