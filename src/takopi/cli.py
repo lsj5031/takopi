@@ -236,6 +236,7 @@ def _parse_bridge_config(
         startup_msg=startup_msg,
         exec_cfg=exec_cfg,
         projects=projects,
+        configured_engines=settings.get_configured_engines(),
     )
 
 

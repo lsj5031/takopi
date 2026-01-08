@@ -679,6 +679,7 @@ async def _handle_callback(
             callback.data,
             cfg.projects,
             None,
+            callback.message_id,
         )
     except Exception as exc:
         logger.error(
@@ -697,6 +698,7 @@ async def run_main_loop(
     ] = poll_updates,
 ) -> None:
     running_tasks: RunningTasks = {}
+    active_projects: dict[int, str] = {}  # chat_id -> project_alias
 
     try:
         await _set_command_menu(cfg)
@@ -831,18 +833,29 @@ async def run_main_loop(
                     continue
 
                 if _is_sessions_command(text):
-                    # Parse project directive from message (e.g., "/tui /sessions")
-                    reply_text = msg.reply_to_text
+                    # Parse explicit project directive from message (e.g., "/tui /sessions")
+                    # Don't use _resolve_message here because it falls back to default_project,
+                    # which would prevent active_projects from being used.
                     try:
-                        resolved = _resolve_message(
-                            text=text,
-                            reply_text=reply_text,
-                            router=cfg.router,
+                        directives = _parse_directives(
+                            text,
+                            engine_ids=cfg.router.engine_ids,
                             projects=cfg.projects,
                         )
-                        sessions_context = resolved.context
+                        explicit_project = directives.project
                     except DirectiveError:
-                        sessions_context = None
+                        explicit_project = None
+
+                    # Priority: explicit directive > active project > show_sessions_menu default
+                    if explicit_project:
+                        sessions_context = RunContext(project=explicit_project, branch=None)
+                    else:
+                        active_project = active_projects.get(chat_id)
+                        if active_project:
+                            sessions_context = RunContext(project=active_project, branch=None)
+                        else:
+                            sessions_context = None
+
                     tg.start_soon(
                         show_sessions_menu,
                         cfg.bot,
@@ -868,6 +881,16 @@ async def run_main_loop(
                         text=f"error:\n{exc}",
                     )
                     continue
+
+
+
+                if resolved.context and resolved.context.project:
+                    active_projects[chat_id] = resolved.context.project
+                    logger.info(
+                        "context.updated",
+                        chat_id=chat_id,
+                        project=resolved.context.project,
+                    )
 
                 text = resolved.prompt
                 resume_token = resolved.resume_token

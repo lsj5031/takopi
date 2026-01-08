@@ -24,12 +24,14 @@ class _FakeBot:
         parse_mode: str | None = None,
         *,
         replace_message_id: int | None = None,
+        reply_markup: dict | None = None,
     ) -> dict:
         _ = reply_to_message_id
         _ = disable_notification
         _ = entities
         _ = parse_mode
         _ = replace_message_id
+        _ = reply_markup
         self.calls.append("send_message")
         return {"message_id": 1}
 
@@ -97,6 +99,23 @@ class _FakeBot:
 
     async def get_me(self) -> dict | None:
         return {"id": 1}
+
+    async def send_document(
+        self,
+        *,
+        chat_id: int,
+        document,
+        caption: str | None = None,
+    ) -> dict | None:
+        return {"message_id": 1}
+
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        *,
+        text: str | None = None,
+    ) -> bool:
+        return True
 
 
 @pytest.mark.anyio

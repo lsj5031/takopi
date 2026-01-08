@@ -106,6 +106,27 @@ class TakopiSettings(BaseSettings):
 
     plugins: PluginsSettings = Field(default_factory=PluginsSettings)
 
+    def get_configured_engines(self) -> set[str]:
+        """Return set of engine IDs explicitly used in configuration.
+
+        Includes:
+        - Global default_engine
+        - Per-project default_engine values
+
+        Returns:
+            Set of lowercase engine IDs (e.g., {"pi", "codex"})
+        """
+        engines: set[str] = set()
+
+        if self.default_engine:
+            engines.add(self.default_engine.lower())
+
+        for project in self.projects.values():
+            if project.default_engine:
+                engines.add(project.default_engine.lower())
+
+        return engines
+
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_telegram_keys(cls, data: Any) -> Any:

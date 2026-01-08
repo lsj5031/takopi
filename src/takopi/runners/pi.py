@@ -321,6 +321,7 @@ class PiRunner(ResumeTokenMixin, JsonlSubprocessRunner):
         _ = prompt
         if resume is None:
             from ..utils.paths import get_run_base_dir
+
             cwd = get_run_base_dir()
             session_path = self._new_session_path(cwd)
             token = ResumeToken(engine=ENGINE, value=session_path)

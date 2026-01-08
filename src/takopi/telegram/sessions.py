@@ -31,6 +31,7 @@ async def show_sessions_menu(
     context: RunContext | None,
     projects: ProjectsConfig,
     page: int = 0,
+    message_id: int | None = None,
 ) -> None:
     """Show sessions menu for current or default project.
 
@@ -140,11 +141,27 @@ async def show_sessions_menu(
         [{"text": "🔄 Refresh", "callback_data": f"refresh:{project_alias}"}]
     )
 
-    await bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        reply_markup={"inline_keyboard": keyboard},
-    )
+    if message_id:
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup={"inline_keyboard": keyboard},
+            )
+        except Exception:
+            # Fallback if edit fails (e.g. message too old)
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup={"inline_keyboard": keyboard},
+            )
+    else:
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup={"inline_keyboard": keyboard},
+        )
 
 
 async def handle_session_export(
@@ -223,6 +240,7 @@ async def handle_callback_query(
     callback_data: str,
     projects: ProjectsConfig,
     context: RunContext | None,
+    message_id: int | None = None,
 ) -> bool:
     """Handle callback query from inline keyboard.
 
@@ -278,7 +296,9 @@ async def handle_callback_query(
         )
 
         refresh_context = RunContext(project=project_alias, branch=None)
-        await show_sessions_menu(bot, chat_id, refresh_context, projects)
+        await show_sessions_menu(
+            bot, chat_id, refresh_context, projects, message_id=message_id
+        )
 
         return True
 
@@ -300,7 +320,9 @@ async def handle_callback_query(
         )
 
         page_context = RunContext(project=project_alias, branch=None)
-        await show_sessions_menu(bot, chat_id, page_context, projects, page=page)
+        await show_sessions_menu(
+            bot, chat_id, page_context, projects, page=page, message_id=message_id
+        )
 
         return True
 

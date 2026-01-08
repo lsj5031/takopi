@@ -155,9 +155,10 @@ def test_session_path_uses_run_base_dir() -> None:
         assert str(base_dir / "sessions" / "--project--") in session_path
         assert str(base_dir / "sessions" / "--startup--") not in session_path
 
-    with patch("takopi.runners.pi.Path.cwd", return_value=startup_cwd), patch(
-        "takopi.runners.pi._default_session_dir"
-    ) as default_session_dir:
+    with (
+        patch("takopi.runners.pi.Path.cwd", return_value=startup_cwd),
+        patch("takopi.runners.pi._default_session_dir") as default_session_dir,
+    ):
         default_session_dir.return_value = base_dir / "sessions" / "--startup--"
         session_path_default = runner._new_session_path()
         assert str(base_dir / "sessions" / "--startup--") in session_path_default

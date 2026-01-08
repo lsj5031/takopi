@@ -3,6 +3,7 @@ from __future__ import annotations
 import itertools
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import (
     Any,
     AsyncIterator,
@@ -91,6 +92,45 @@ def parse_incoming_update(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class CallbackQuery:
+    """Parsed callback query from inline keyboard button."""
+
+    callback_query_id: str
+    chat_id: int
+    data: str
+    message_id: int | None = None
+
+
+def parse_callback_query(
+    update: dict[str, Any], *, chat_id: int
+) -> CallbackQuery | None:
+    callback = update.get("callback_query")
+    if not isinstance(callback, dict):
+        return None
+    callback_id = callback.get("id")
+    if not isinstance(callback_id, str):
+        return None
+    data = callback.get("data")
+    if not isinstance(data, str):
+        return None
+    message = callback.get("message")
+    if not isinstance(message, dict):
+        return None
+    chat = message.get("chat")
+    if not isinstance(chat, dict):
+        return None
+    msg_chat_id = chat.get("id")
+    if not isinstance(msg_chat_id, int) or msg_chat_id != chat_id:
+        return None
+    return CallbackQuery(
+        callback_query_id=callback_id,
+        chat_id=msg_chat_id,
+        data=data,
+        message_id=message.get("message_id") if isinstance(message.get("message_id"), int) else None,
+    )
+
+
 async def poll_incoming(
     bot: BotClient,
     *,
@@ -113,6 +153,32 @@ async def poll_incoming(
                 yield msg
 
 
+async def poll_incoming_with_callbacks(
+    bot: BotClient,
+    *,
+    chat_id: int,
+    offset: int | None = None,
+) -> AsyncIterator[IncomingMessage | CallbackQuery]:
+    while True:
+        updates = await bot.get_updates(
+            offset=offset, timeout_s=50, allowed_updates=["message", "callback_query"]
+        )
+        if updates is None:
+            logger.info("loop.get_updates.failed")
+            await anyio.sleep(2)
+            continue
+        logger.debug("loop.updates", updates=updates)
+        for upd in updates:
+            offset = upd["update_id"] + 1
+            msg = parse_incoming_update(upd, chat_id=chat_id)
+            if msg is not None:
+                yield msg
+                continue
+            callback = parse_callback_query(upd, chat_id=chat_id)
+            if callback is not None:
+                yield callback
+
+
 class BotClient(Protocol):
     async def close(self) -> None: ...
 
@@ -133,6 +199,7 @@ class BotClient(Protocol):
         parse_mode: str | None = None,
         *,
         replace_message_id: int | None = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> dict | None: ...
 
     async def edit_message_text(
@@ -142,6 +209,7 @@ class BotClient(Protocol):
         text: str,
         entities: list[dict] | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
         *,
         wait: bool = True,
     ) -> dict | None: ...
@@ -158,6 +226,21 @@ class BotClient(Protocol):
         *,
         scope: dict[str, Any] | None = None,
         language_code: str | None = None,
+    ) -> bool: ...
+
+    async def send_document(
+        self,
+        *,
+        chat_id: int,
+        document: Path,
+        caption: str | None = None,
+    ) -> dict | None: ...
+
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        *,
+        text: str | None = None,
     ) -> bool: ...
 
     async def get_me(self) -> dict | None: ...
@@ -566,6 +649,7 @@ class TelegramClient:
         parse_mode: str | None = None,
         *,
         replace_message_id: int | None = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> dict | None:
         async def execute() -> dict | None:
             if self._client_override is not None:
@@ -577,6 +661,7 @@ class TelegramClient:
                     entities=entities,
                     parse_mode=parse_mode,
                     replace_message_id=replace_message_id,
+                    reply_markup=reply_markup,
                 )
             params: dict[str, Any] = {"chat_id": chat_id, "text": text}
             if disable_notification is not None:
@@ -587,6 +672,8 @@ class TelegramClient:
                 params["entities"] = entities
             if parse_mode is not None:
                 params["parse_mode"] = parse_mode
+            if reply_markup is not None:
+                params["reply_markup"] = reply_markup
             result = await self._post("sendMessage", params)
             return result if isinstance(result, dict) else None
 
@@ -614,6 +701,7 @@ class TelegramClient:
         text: str,
         entities: list[dict] | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
         *,
         wait: bool = True,
     ) -> dict | None:
@@ -625,6 +713,7 @@ class TelegramClient:
                     text=text,
                     entities=entities,
                     parse_mode=parse_mode,
+                    reply_markup=reply_markup,
                     wait=wait,
                 )
             params: dict[str, Any] = {
@@ -636,6 +725,8 @@ class TelegramClient:
                 params["entities"] = entities
             if parse_mode is not None:
                 params["parse_mode"] = parse_mode
+            if reply_markup is not None:
+                params["reply_markup"] = reply_markup
             result = await self._post("editMessageText", params)
             return result if isinstance(result, dict) else None
 
@@ -722,4 +813,82 @@ class TelegramClient:
             execute=execute,
             priority=SEND_PRIORITY,
             chat_id=None,
+        )
+
+    async def send_document(
+        self,
+        *,
+        chat_id: int,
+        document: Path,
+        caption: str | None = None,
+    ) -> dict | None:
+        async def execute() -> dict | None:
+            if self._client_override is not None:
+                return await self._client_override.send_document(
+                    chat_id=chat_id,
+                    document=document,
+                    caption=caption,
+                )
+            if self._http_client is None or self._base is None:
+                raise RuntimeError(
+                    "TelegramClient is configured without an HTTP client."
+                )
+            with open(document, "rb") as f:
+                files = {"document": (document.name, f, "application/octet-stream")}
+                data: dict[str, Any] = {"chat_id": chat_id}
+                if caption is not None:
+                    data["caption"] = caption
+                try:
+                    resp = await self._http_client.post(
+                        f"{self._base}/sendDocument",
+                        data=data,
+                        files=files,
+                    )
+                    resp.raise_for_status()
+                    payload = resp.json()
+                    if isinstance(payload, dict) and payload.get("ok"):
+                        return payload.get("result")
+                    return None
+                except Exception as exc:
+                    logger.error(
+                        "telegram.send_document_failed",
+                        error=str(exc),
+                        error_type=exc.__class__.__name__,
+                    )
+                    return None
+
+        return await self.enqueue_op(
+            key=self.unique_key("send_document"),
+            label="send_document",
+            execute=execute,
+            priority=SEND_PRIORITY,
+            chat_id=chat_id,
+        )
+
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        *,
+        text: str | None = None,
+    ) -> bool:
+        async def execute() -> bool:
+            if self._client_override is not None:
+                return await self._client_override.answer_callback_query(
+                    callback_query_id,
+                    text=text,
+                )
+            params: dict[str, Any] = {"callback_query_id": callback_query_id}
+            if text is not None:
+                params["text"] = text
+            result = await self._post("answerCallbackQuery", params)
+            return bool(result)
+
+        return bool(
+            await self.enqueue_op(
+                key=self.unique_key("answer_callback_query"),
+                label="answer_callback_query",
+                execute=execute,
+                priority=SEND_PRIORITY,
+                chat_id=None,
+            )
         )

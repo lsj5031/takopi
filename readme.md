@@ -133,6 +133,21 @@ you can also copy it to resume an interactive session in your terminal.
 
 to stop a run, reply to the progress message with `/cancel`.
 
+### session viewing (pi engine)
+
+view and export pi coding agent sessions directly in telegram:
+
+```
+/sessions
+```
+
+the bot shows the 5 most recent sessions with inline keyboard buttons. tap a session to export and download an html file.
+
+requirements:
+- project must use `pi` engine (`default_engine = "pi"`)
+- pi must be installed
+- sessions are stored at `~/.pi/agent/sessions/<project>/`
+
 default: progress is silent, final answer is sent as a new message so you receive a notification, progress message is deleted.
 
 if you prefer no notifications, `--no-final-notify` edits the progress message into the final answer.

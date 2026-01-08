@@ -112,6 +112,7 @@ class _FakeBot:
         parse_mode: str | None = None,
         *,
         replace_message_id: int | None = None,
+        reply_markup: dict | None = None,
     ) -> dict:
         self.send_calls.append(
             {
@@ -122,6 +123,7 @@ class _FakeBot:
                 "entities": entities,
                 "parse_mode": parse_mode,
                 "replace_message_id": replace_message_id,
+                "reply_markup": reply_markup,
             }
         )
         return {"message_id": 1}
@@ -170,6 +172,23 @@ class _FakeBot:
 
     async def get_me(self) -> dict | None:
         return {"id": 1}
+
+    async def send_document(
+        self,
+        *,
+        chat_id: int,
+        document,
+        caption: str | None = None,
+    ) -> dict | None:
+        return {"message_id": 1}
+
+    async def answer_callback_query(
+        self,
+        callback_query_id: str,
+        *,
+        text: str | None = None,
+    ) -> bool:
+        return True
 
     async def close(self) -> None:
         return None
@@ -237,7 +256,7 @@ def test_build_bot_commands_includes_cancel_and_engine() -> None:
         [Return(answer="ok")], engine=CODEX_ENGINE, resume_value="sid"
     )
     router = _make_router(runner)
-    commands = _build_bot_commands(router, empty_projects_config())
+    commands = _build_bot_commands(router, empty_projects_config(), {"codex"})
 
     assert {"command": "cancel", "description": "cancel run"} in commands
     assert any(cmd["command"] == "codex" for cmd in commands)
@@ -264,7 +283,7 @@ def test_build_bot_commands_includes_projects() -> None:
         default_project=None,
     )
 
-    commands = _build_bot_commands(router, projects)
+    commands = _build_bot_commands(router, projects, {"codex"})
 
     assert any(cmd["command"] == "good" for cmd in commands)
     assert not any(cmd["command"] == "bad-name" for cmd in commands)
@@ -287,7 +306,7 @@ def test_build_bot_commands_caps_total() -> None:
         default_project=None,
     )
 
-    commands = _build_bot_commands(router, projects)
+    commands = _build_bot_commands(router, projects, {"codex"})
 
     assert len(commands) == 100
     assert any(cmd["command"] == "codex" for cmd in commands)
@@ -342,6 +361,7 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
             parse_mode: str | None = None,
             *,
             replace_message_id: int | None = None,
+            reply_markup: dict | None = None,
         ) -> dict | None:
             return None
 
@@ -387,6 +407,23 @@ async def test_telegram_transport_edit_wait_false_returns_ref() -> None:
 
         async def get_me(self) -> dict | None:
             return None
+
+        async def send_document(
+            self,
+            *,
+            chat_id: int,
+            document,
+            caption: str | None = None,
+        ) -> dict | None:
+            return None
+
+        async def answer_callback_query(
+            self,
+            callback_query_id: str,
+            *,
+            text: str | None = None,
+        ) -> bool:
+            return True
 
         async def close(self) -> None:
             return None
